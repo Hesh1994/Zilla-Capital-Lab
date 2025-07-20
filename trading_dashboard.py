@@ -1,3 +1,6 @@
+# Trading Strategy Backtesting Dashboard - Version 2.0
+# Updated: July 20, 2025 - Fixed import issues and added manual RSI fallback
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -17,16 +20,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Try to import technical analysis libraries after page config
+# Initialize technical analysis flags
 USE_TA = False
-ta = None
 
+# Try to import technical analysis library
 try:
     import ta
     USE_TA = True
     st.sidebar.success("✅ Using ta library for technical analysis")
 except ImportError:
-    st.sidebar.info("ℹ️ Using manual RSI calculation (ta library not available)")
+    st.sidebar.info("ℹ️ Using manual RSI calculation")
 
 st.title("📈 Trading Strategy Backtesting Dashboard")
 st.markdown("---")
