@@ -9,31 +9,25 @@ import itertools
 import warnings
 warnings.filterwarnings('ignore')
 
-# Try to import technical analysis libraries
-USE_PANDAS_TA = False
-USE_TA = False
-
-try:
-    import pandas_ta
-    USE_PANDAS_TA = True
-    st.sidebar.success("✅ Using pandas_ta library")
-except ImportError:
-    try:
-        import ta
-        USE_TA = True
-        st.sidebar.success("✅ Using ta library")
-    except ImportError:
-        st.sidebar.error("❌ No technical analysis library available")
-        st.error("Please install either 'pandas_ta' or 'ta' library")
-        st.stop()
-
-# Set page config
+# Set page config first
 st.set_page_config(
     page_title="Trading Strategy Dashboard",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Try to import technical analysis libraries after page config
+USE_TA = False
+ta = None
+
+try:
+    import ta
+    USE_TA = True
+    st.sidebar.success("✅ Using ta library for technical analysis")
+except ImportError:
+    st.sidebar.warning("⚠️ Using manual RSI calculation")
+    st.info("Technical analysis library not available. Using manual calculations.")
 
 st.title("📈 Trading Strategy Backtesting Dashboard")
 st.markdown("---")
@@ -126,9 +120,7 @@ def calculate_indicators(df, ticker, price_col, rsi_period, rsi_mid_period, sma_
     df['sma'] = df[price_col, ticker].rolling(window=sma_period).mean()
     
     # Calculate RSI using available library
-    if USE_PANDAS_TA:
-        df['rsi'] = pandas_ta.rsi(df[price_col, ticker], length=rsi_period)
-    elif USE_TA:
+    if USE_TA:
         df['rsi'] = ta.momentum.rsi(df[price_col, ticker], window=rsi_period)
     else:
         # Manual RSI calculation as fallback
