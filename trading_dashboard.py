@@ -306,18 +306,12 @@ def create_summary_table(all_results, df):
     for name, result_df in all_results.items():
         if len(result_df) > 0:
             num_trades = (result_df['period_length'] > 1).sum()
-            num_positive_buy = (result_df['buy_return'] > 0).sum()
-            num_positive_sell = (result_df['sell_return'] > 0).sum()
-            total_positive = num_positive_buy + num_positive_sell
+            num_positive = (result_df['buy_return'] > 0).sum()
+            num_negative = (result_df['sell_return'] < 0).sum()
 
-            win_rate = total_positive / num_trades if num_trades > 0 else 0
-            avg_buy_return = result_df[result_df['buy_return'] > 0]['buy_return'].mean() if num_positive_buy > 0 else 0
-            avg_sell_return = result_df[result_df['sell_return'] > 0]['sell_return'].mean() if num_positive_sell > 0 else 0
-            
-            # Calculate total return combining both buy and sell
-            total_return_buy = (1 + result_df['buy_return']).prod() - 1
-            total_return_sell = (1 + result_df['sell_return']).prod() - 1
-            combined_total_return = total_return_buy + total_return_sell
+            win_rate = (num_positive + num_negative) / num_trades if num_trades > 0 else 0
+            avg_return = result_df[result_df['buy_return'] > 0]['buy_return'].mean() if num_positive > 0 else 0
+            total_return = (1 + result_df['buy_return']).prod() - 1
 
             # Calculate max drawdown and Sharpe ratio if strategy returns exist
             max_drawdown = 0
@@ -336,26 +330,38 @@ def create_summary_table(all_results, df):
             else:
                 longest_trade = shortest_trade = avg_length = 0
             
-            summary_data.append({
-                'Strategy': name,
-                'Total Trades': num_trades,
-                'Win Rate': f"{win_rate:.2%}",
-                'Avg Buy Return': f"{avg_buy_return:.2%}" if num_positive_buy > 0 else "N/A",
-                'Avg Sell Return': f"{avg_sell_return:.2%}" if num_positive_sell > 0 else "N/A",
-                'Total Return': f"{combined_total_return:.2%}",
-                'Max Drawdown': f"{max_drawdown:.2%}",
-                'Sharpe Ratio': f"{sharpe_ratio:.2f}" if sharpe_ratio != 0 else "N/A",
-                'Longest Trade': longest_trade,
-                'Shortest Trade': shortest_trade,
-                'Avg Length': f"{avg_length:.1f}" if avg_length > 0 else "N/A"
-            })
+            if num_positive > 0:
+                summary_data.append({
+                    'Strategy': name,
+                    'Total Trades': num_trades,
+                    'Win Rate': f"{win_rate:.2%}",
+                    'Avg Return': f"{avg_return:.2%}",
+                    'Total Return': f"{total_return:.2%}",
+                    'Max Drawdown': f"{max_drawdown:.2%}",
+                    'Sharpe Ratio': f"{sharpe_ratio:.2f}" if sharpe_ratio != 0 else "N/A",
+                    'Longest Trade': longest_trade,
+                    'Shortest Trade': shortest_trade,
+                    'Avg Length': f"{avg_length:.1f}" if avg_length > 0 else "N/A"
+                })
+            else:
+                summary_data.append({
+                    'Strategy': name,
+                    'Total Trades': num_trades,
+                    'Win Rate': f"{win_rate:.2%}",
+                    'Avg Return': "N/A",
+                    'Total Return': f"{total_return:.2%}",
+                    'Max Drawdown': f"{max_drawdown:.2%}",
+                    'Sharpe Ratio': f"{sharpe_ratio:.2f}" if sharpe_ratio != 0 else "N/A",
+                    'Longest Trade': "N/A",
+                    'Shortest Trade': "N/A",
+                    'Avg Length': "N/A"
+                })
         else:
             summary_data.append({
                 'Strategy': name,
                 'Total Trades': 0,
                 'Win Rate': "N/A",
-                'Avg Buy Return': "N/A",
-                'Avg Sell Return': "N/A",
+                'Avg Return': "N/A",
                 'Total Return': "N/A",
                 'Max Drawdown': "N/A",
                 'Sharpe Ratio': "N/A",
@@ -463,16 +469,28 @@ if 'results' in st.session_state:
                     else:
                         longest_buy_trade = shortest_buy_trade = avg_buy_length = 0
                     
-                    buy_summary_data.append({
-                        'Strategy': name,
-                        'Total Trades': num_buy_trades,
-                        'Win Rate': f"{buy_win_rate:.2%}" if num_buy_trades > 0 else "N/A",
-                        'Avg Return': f"{avg_buy_return:.2%}" if num_positive_buy > 0 else "N/A",
-                        'Total Return': f"{total_buy_return:.2%}",
-                        'Longest Trade': longest_buy_trade if longest_buy_trade > 0 else "N/A",
-                        'Shortest Trade': shortest_buy_trade if shortest_buy_trade > 0 else "N/A",
-                        'Avg Length': f"{avg_buy_length:.1f}" if avg_buy_length > 0 else "N/A"
-                    })
+                    if num_buy_trades > 0:
+                        buy_summary_data.append({
+                            'Strategy': name,
+                            'Total Trades': num_buy_trades,
+                            'Win Rate': f"{buy_win_rate:.2%}",
+                            'Avg Return': f"{avg_buy_return:.2%}" if num_positive_buy > 0 else "N/A",
+                            'Total Return': f"{total_buy_return:.2%}",
+                            'Longest Trade': longest_buy_trade,
+                            'Shortest Trade': shortest_buy_trade,
+                            'Avg Length': f"{avg_buy_length:.1f}" if avg_buy_length > 0 else "N/A"
+                        })
+                    else:
+                        buy_summary_data.append({
+                            'Strategy': name,
+                            'Total Trades': 0,
+                            'Win Rate': "N/A",
+                            'Avg Return': "N/A",
+                            'Total Return': "N/A",
+                            'Longest Trade': "N/A",
+                            'Shortest Trade': "N/A",
+                            'Avg Length': "N/A"
+                        })
                 else:
                     buy_summary_data.append({
                         'Strategy': name,
@@ -515,16 +533,28 @@ if 'results' in st.session_state:
                     else:
                         longest_sell_trade = shortest_sell_trade = avg_sell_length = 0
                     
-                    sell_summary_data.append({
-                        'Strategy': name,
-                        'Total Trades': num_sell_trades,
-                        'Win Rate': f"{sell_win_rate:.2%}" if num_sell_trades > 0 else "N/A",
-                        'Avg Return': f"{avg_sell_return:.2%}" if num_positive_sell > 0 else "N/A",
-                        'Total Return': f"{total_sell_return:.2%}",
-                        'Longest Trade': longest_sell_trade if longest_sell_trade > 0 else "N/A",
-                        'Shortest Trade': shortest_sell_trade if shortest_sell_trade > 0 else "N/A",
-                        'Avg Length': f"{avg_sell_length:.1f}" if avg_sell_length > 0 else "N/A"
-                    })
+                    if num_sell_trades > 0:
+                        sell_summary_data.append({
+                            'Strategy': name,
+                            'Total Trades': num_sell_trades,
+                            'Win Rate': f"{sell_win_rate:.2%}",
+                            'Avg Return': f"{avg_sell_return:.2%}" if num_positive_sell > 0 else "N/A",
+                            'Total Return': f"{total_sell_return:.2%}",
+                            'Longest Trade': longest_sell_trade,
+                            'Shortest Trade': shortest_sell_trade,
+                            'Avg Length': f"{avg_sell_length:.1f}" if avg_sell_length > 0 else "N/A"
+                        })
+                    else:
+                        sell_summary_data.append({
+                            'Strategy': name,
+                            'Total Trades': 0,
+                            'Win Rate': "N/A",
+                            'Avg Return': "N/A",
+                            'Total Return': "N/A",
+                            'Longest Trade': "N/A",
+                            'Shortest Trade': "N/A",
+                            'Avg Length': "N/A"
+                        })
                 else:
                     sell_summary_data.append({
                         'Strategy': name,
