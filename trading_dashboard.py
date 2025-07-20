@@ -37,6 +37,14 @@ with col1:
 with col2:
     end_date = st.date_input("📅 End Date", value=pd.to_datetime("2025-07-07"))
 
+# Data Frequency Selection
+data_frequency = st.sidebar.selectbox(
+    "📊 Data Frequency", 
+    ["Daily", "Weekly", "Monthly"], 
+    index=0,
+    help="Choose the frequency of price data for analysis"
+)
+
 # Price Column Selection
 price_options = ["Adj Close", "Close", "Open", "High", "Low"]
 price_column = st.sidebar.selectbox("💰 Price Column", price_options, index=0)
@@ -79,20 +87,36 @@ selected_strategies = st.sidebar.multiselect(
 
 # Analysis Functions
 @st.cache_data
-def download_data(ticker, start_date, end_date):
-    """Download stock data from Yahoo Finance"""
+def download_data(ticker, start_date, end_date, frequency="Daily"):
+    """Download stock data from Yahoo Finance with specified frequency"""
     try:
-        data = yf.download(tickers=ticker, start=start_date, end=end_date, interval='1d', auto_adjust=False)
+        # Map frequency to yfinance interval
+        interval_map = {
+            "Daily": "1d",
+            "Weekly": "1wk", 
+            "Monthly": "1mo"
+        }
+        interval = interval_map.get(frequency, "1d")
+        
+        data = yf.download(tickers=ticker, start=start_date, end=end_date, interval=interval, auto_adjust=False)
         return data
     except Exception as e:
         st.error(f"Error downloading data: {e}")
         return None
 
 @st.cache_data
-def download_sp500_data(start_date, end_date):
-    """Download S&P 500 data for comparison"""
+def download_sp500_data(start_date, end_date, frequency="Daily"):
+    """Download S&P 500 data for comparison with specified frequency"""
     try:
-        sp500_data = yf.download(tickers='^GSPC', start=start_date, end=end_date, interval='1d', auto_adjust=False)
+        # Map frequency to yfinance interval
+        interval_map = {
+            "Daily": "1d",
+            "Weekly": "1wk",
+            "Monthly": "1mo"
+        }
+        interval = interval_map.get(frequency, "1d")
+        
+        sp500_data = yf.download(tickers='^GSPC', start=start_date, end=end_date, interval=interval, auto_adjust=False)
         return sp500_data
     except Exception as e:
         st.error(f"Error downloading S&P 500 data: {e}")
@@ -299,19 +323,30 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
     else:
         return pd.DataFrame()
 
-def create_summary_table(all_results, df):
+def create_summary_table(all_results, df, frequency="Daily"):
     """Create comparative summary table with max drawdown and Sharpe ratio"""
     summary_data = []
     
+    # Set minimum trade days based on frequency
+    min_trade_days = {
+        "Daily": 3,
+        "Weekly": 1,  # 1 week = ~7 days
+        "Monthly": 1  # 1 month = ~30 days
+    }
+    min_days = min_trade_days.get(frequency, 3)
+    
     for name, result_df in all_results.items():
         if len(result_df) > 0:
-            num_trades = (result_df['period_length'] > 1).sum()
-            num_positive = (result_df['buy_return'] > 0).sum()
-            num_negative = (result_df['sell_return'] < 0).sum()
+            # Filter trades based on minimum duration
+            filtered_trades = result_df[result_df['period_length'] >= min_days]
+            
+            num_trades = len(filtered_trades)
+            num_positive = (filtered_trades['buy_return'] > 0).sum()
+            num_negative = (filtered_trades['sell_return'] < 0).sum()
 
             win_rate = (num_positive + num_negative) / num_trades if num_trades > 0 else 0
-            avg_return = result_df[result_df['buy_return'] > 0]['buy_return'].mean() if num_positive > 0 else 0
-            total_return = (1 + result_df['buy_return']).prod() - 1
+            avg_return = filtered_trades[filtered_trades['buy_return'] > 0]['buy_return'].mean() if num_positive > 0 else 0
+            total_return = (1 + filtered_trades['buy_return']).prod() - 1 if len(filtered_trades) > 0 else 0
 
             # Calculate max drawdown and Sharpe ratio if strategy returns exist
             max_drawdown = 0
@@ -321,21 +356,20 @@ def create_summary_table(all_results, df):
                 max_drawdown = calculate_max_drawdown(strategy_returns)
                 sharpe_ratio = calculate_sharpe_ratio(strategy_returns)
 
-            # Calculate additional statistics for all periods excluding one-day trades
-            multi_day_trades = result_df[result_df['period_length'] > 1]
-            if len(multi_day_trades) > 0:
-                longest_trade = multi_day_trades['period_length'].max()
-                shortest_trade = multi_day_trades['period_length'].min()
-                avg_length = multi_day_trades['period_length'].mean()
+            # Calculate additional statistics for filtered trades
+            if len(filtered_trades) > 0:
+                longest_trade = filtered_trades['period_length'].max()
+                shortest_trade = filtered_trades['period_length'].min()
+                avg_length = filtered_trades['period_length'].mean()
             else:
                 longest_trade = shortest_trade = avg_length = 0
             
-            if num_positive > 0:
+            if num_trades > 0:
                 summary_data.append({
                     'Strategy': name,
                     'Total Trades': num_trades,
                     'Win Rate': f"{win_rate:.2%}",
-                    'Avg Return': f"{avg_return:.2%}",
+                    'Avg Return': f"{avg_return:.2%}" if num_positive > 0 else "N/A",
                     'Total Return': f"{total_return:.2%}",
                     'Max Drawdown': f"{max_drawdown:.2%}",
                     'Sharpe Ratio': f"{sharpe_ratio:.2f}" if sharpe_ratio != 0 else "N/A",
@@ -346,10 +380,10 @@ def create_summary_table(all_results, df):
             else:
                 summary_data.append({
                     'Strategy': name,
-                    'Total Trades': num_trades,
-                    'Win Rate': f"{win_rate:.2%}",
+                    'Total Trades': 0,
+                    'Win Rate': "N/A",
                     'Avg Return': "N/A",
-                    'Total Return': f"{total_return:.2%}",
+                    'Total Return': "N/A",
                     'Max Drawdown': f"{max_drawdown:.2%}",
                     'Sharpe Ratio': f"{sharpe_ratio:.2f}" if sharpe_ratio != 0 else "N/A",
                     'Longest Trade': "N/A",
@@ -379,10 +413,10 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
     else:
         with st.spinner("Downloading data and running analysis..."):
             # Download stock data
-            df = download_data(ticker, start_date, end_date)
+            df = download_data(ticker, start_date, end_date, data_frequency)
             
             # Download S&P 500 data for comparison
-            sp500_df = download_sp500_data(start_date, end_date)
+            sp500_df = download_sp500_data(start_date, end_date, data_frequency)
             
             if df is not None and not df.empty:
                 # Calculate indicators
@@ -420,6 +454,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                 st.session_state['sp500_df'] = sp500_df
                 st.session_state['ticker'] = ticker
                 st.session_state['price_column'] = price_column
+                st.session_state['data_frequency'] = data_frequency
 
 # Display results if available
 if 'results' in st.session_state:
@@ -428,6 +463,7 @@ if 'results' in st.session_state:
     sp500_df = st.session_state.get('sp500_df', None)
     ticker = st.session_state['ticker']
     price_column = st.session_state['price_column']
+    data_frequency = st.session_state.get('data_frequency', 'Daily')
     
     # Create tabs for different views
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Summary", "📈 Charts", "🔍 Detailed Analysis", "📋 Raw Data", "📉 Risk Analysis"])
@@ -435,8 +471,11 @@ if 'results' in st.session_state:
     with tab1:
         st.header("📊 Strategy Performance Summary")
         
+        # Display frequency info
+        st.info(f"📊 **Data Frequency:** {data_frequency} | **Minimum Trade Duration:** {3 if data_frequency == 'Daily' else 1} {data_frequency.lower()} period(s)")
+        
         if all_results:
-            summary_df = create_summary_table(all_results, df)
+            summary_df = create_summary_table(all_results, df, data_frequency)
             
             # Display summary table
             st.dataframe(
@@ -449,23 +488,41 @@ if 'results' in st.session_state:
             st.subheader("📈 Buy Trades Statistics")
             buy_summary_data = []
             
+            # Set minimum trade days based on frequency
+            min_trade_days = {
+                "Daily": 3,
+                "Weekly": 1,
+                "Monthly": 1
+            }
+            min_days = min_trade_days.get(data_frequency, 3)
+            
             for name, result_df in all_results.items():
                 if len(result_df) > 0:
+                    # Filter trades based on minimum duration
+                    filtered_trades = result_df[result_df['period_length'] >= min_days]
+                    
                     # Buy return statistics
-                    buy_trades = result_df[result_df['buy_return'] != 0]
-                    num_buy_trades = (buy_trades['period_length'] > 1).sum()
+                    buy_trades = filtered_trades[filtered_trades['buy_return'] != 0]
+                    num_buy_trades = len(buy_trades)
                     num_positive_buy = (buy_trades['buy_return'] > 0).sum()
                     
                     buy_win_rate = num_positive_buy / num_buy_trades if num_buy_trades > 0 else 0
                     avg_buy_return = buy_trades[buy_trades['buy_return'] > 0]['buy_return'].mean() if num_positive_buy > 0 else 0
                     total_buy_return = (1 + buy_trades['buy_return']).prod() - 1 if len(buy_trades) > 0 else 0
                     
+                    # Calculate max drawdown and Sharpe ratio for buy trades
+                    buy_max_drawdown = 0
+                    buy_sharpe_ratio = 0
+                    if f'returns_{name}' in df.columns:
+                        strategy_returns = df[f'returns_{name}'].fillna(0)
+                        buy_max_drawdown = calculate_max_drawdown(strategy_returns)
+                        buy_sharpe_ratio = calculate_sharpe_ratio(strategy_returns)
+                    
                     # Length statistics for buy trades
-                    multi_day_buy_trades = buy_trades[buy_trades['period_length'] > 1]
-                    if len(multi_day_buy_trades) > 0:
-                        longest_buy_trade = multi_day_buy_trades['period_length'].max()
-                        shortest_buy_trade = multi_day_buy_trades['period_length'].min()
-                        avg_buy_length = multi_day_buy_trades['period_length'].mean()
+                    if len(buy_trades) > 0:
+                        longest_buy_trade = buy_trades['period_length'].max()
+                        shortest_buy_trade = buy_trades['period_length'].min()
+                        avg_buy_length = buy_trades['period_length'].mean()
                     else:
                         longest_buy_trade = shortest_buy_trade = avg_buy_length = 0
                     
@@ -476,6 +533,8 @@ if 'results' in st.session_state:
                             'Win Rate': f"{buy_win_rate:.2%}",
                             'Avg Return': f"{avg_buy_return:.2%}" if num_positive_buy > 0 else "N/A",
                             'Total Return': f"{total_buy_return:.2%}",
+                            'Max Drawdown': f"{buy_max_drawdown:.2%}",
+                            'Sharpe Ratio': f"{buy_sharpe_ratio:.2f}" if buy_sharpe_ratio != 0 else "N/A",
                             'Longest Trade': longest_buy_trade,
                             'Shortest Trade': shortest_buy_trade,
                             'Avg Length': f"{avg_buy_length:.1f}" if avg_buy_length > 0 else "N/A"
@@ -487,6 +546,8 @@ if 'results' in st.session_state:
                             'Win Rate': "N/A",
                             'Avg Return': "N/A",
                             'Total Return': "N/A",
+                            'Max Drawdown': f"{buy_max_drawdown:.2%}",
+                            'Sharpe Ratio': f"{buy_sharpe_ratio:.2f}" if buy_sharpe_ratio != 0 else "N/A",
                             'Longest Trade': "N/A",
                             'Shortest Trade': "N/A",
                             'Avg Length': "N/A"
@@ -498,6 +559,8 @@ if 'results' in st.session_state:
                         'Win Rate': "N/A",
                         'Avg Return': "N/A",
                         'Total Return': "N/A",
+                        'Max Drawdown': "N/A",
+                        'Sharpe Ratio': "N/A",
                         'Longest Trade': "N/A",
                         'Shortest Trade': "N/A",
                         'Avg Length': "N/A"
@@ -515,21 +578,31 @@ if 'results' in st.session_state:
             
             for name, result_df in all_results.items():
                 if len(result_df) > 0:
+                    # Filter trades based on minimum duration
+                    filtered_trades = result_df[result_df['period_length'] >= min_days]
+                    
                     # Sell return statistics  
-                    sell_trades = result_df[result_df['sell_return'] != 0]
-                    num_sell_trades = (sell_trades['period_length'] > 1).sum()
+                    sell_trades = filtered_trades[filtered_trades['sell_return'] != 0]
+                    num_sell_trades = len(sell_trades)
                     num_positive_sell = (sell_trades['sell_return'] > 0).sum()
                     
                     sell_win_rate = num_positive_sell / num_sell_trades if num_sell_trades > 0 else 0
                     avg_sell_return = sell_trades[sell_trades['sell_return'] > 0]['sell_return'].mean() if num_positive_sell > 0 else 0
                     total_sell_return = (1 + sell_trades['sell_return']).prod() - 1 if len(sell_trades) > 0 else 0
                     
+                    # Calculate max drawdown and Sharpe ratio for sell trades
+                    sell_max_drawdown = 0
+                    sell_sharpe_ratio = 0
+                    if f'sell_returns_{name}' in df.columns:
+                        sell_strategy_returns = df[f'sell_returns_{name}'].fillna(0)
+                        sell_max_drawdown = calculate_max_drawdown(sell_strategy_returns)
+                        sell_sharpe_ratio = calculate_sharpe_ratio(sell_strategy_returns)
+                    
                     # Length statistics for sell trades
-                    multi_day_sell_trades = sell_trades[sell_trades['period_length'] > 1]
-                    if len(multi_day_sell_trades) > 0:
-                        longest_sell_trade = multi_day_sell_trades['period_length'].max()
-                        shortest_sell_trade = multi_day_sell_trades['period_length'].min()
-                        avg_sell_length = multi_day_sell_trades['period_length'].mean()
+                    if len(sell_trades) > 0:
+                        longest_sell_trade = sell_trades['period_length'].max()
+                        shortest_sell_trade = sell_trades['period_length'].min()
+                        avg_sell_length = sell_trades['period_length'].mean()
                     else:
                         longest_sell_trade = shortest_sell_trade = avg_sell_length = 0
                     
@@ -540,6 +613,8 @@ if 'results' in st.session_state:
                             'Win Rate': f"{sell_win_rate:.2%}",
                             'Avg Return': f"{avg_sell_return:.2%}" if num_positive_sell > 0 else "N/A",
                             'Total Return': f"{total_sell_return:.2%}",
+                            'Max Drawdown': f"{sell_max_drawdown:.2%}",
+                            'Sharpe Ratio': f"{sell_sharpe_ratio:.2f}" if sell_sharpe_ratio != 0 else "N/A",
                             'Longest Trade': longest_sell_trade,
                             'Shortest Trade': shortest_sell_trade,
                             'Avg Length': f"{avg_sell_length:.1f}" if avg_sell_length > 0 else "N/A"
@@ -551,6 +626,8 @@ if 'results' in st.session_state:
                             'Win Rate': "N/A",
                             'Avg Return': "N/A",
                             'Total Return': "N/A",
+                            'Max Drawdown': f"{sell_max_drawdown:.2%}",
+                            'Sharpe Ratio': f"{sell_sharpe_ratio:.2f}" if sell_sharpe_ratio != 0 else "N/A",
                             'Longest Trade': "N/A",
                             'Shortest Trade': "N/A",
                             'Avg Length': "N/A"
@@ -562,6 +639,8 @@ if 'results' in st.session_state:
                         'Win Rate': "N/A",
                         'Avg Return': "N/A",
                         'Total Return': "N/A",
+                        'Max Drawdown': "N/A",
+                        'Sharpe Ratio': "N/A",
                         'Longest Trade': "N/A",
                         'Shortest Trade': "N/A",
                         'Avg Length': "N/A"
@@ -653,7 +732,7 @@ if 'results' in st.session_state:
                 ))
         
         fig.update_layout(
-            title=f"Cumulative Returns Comparison - {ticker}",
+            title=f"Cumulative Returns Comparison - {ticker} ({data_frequency} Data)",
             xaxis_title="Date",
             yaxis_title="Cumulative Return",
             hovermode='x unified',
@@ -718,7 +797,9 @@ if 'results' in st.session_state:
                 # Filter options
                 col1, col2 = st.columns(2)
                 with col1:
-                    min_length = st.number_input("Minimum Trade Length (days)", min_value=1, value=1)
+                    # Set default minimum based on frequency
+                    default_min = 3 if data_frequency == "Daily" else 1
+                    min_length = st.number_input("Minimum Trade Length", min_value=1, value=default_min)
                 with col2:
                     trade_type = st.selectbox("Trade Type", ["All", "Buy Trades", "Sell Trades"])
                 
@@ -746,7 +827,8 @@ if 'results' in st.session_state:
                         st.metric("Total Trades", len(filtered_df))
                     with col2:
                         avg_length = filtered_df['period_length'].mean()
-                        st.metric("Avg Trade Length", f"{avg_length:.1f} days")
+                        unit = "days" if data_frequency == "Daily" else data_frequency.lower()
+                        st.metric("Avg Trade Length", f"{avg_length:.1f} {unit}")
                     with col3:
                         buy_trades = filtered_df[filtered_df['buy_return'] > 0]
                         win_rate = len(buy_trades) / len(filtered_df) if len(filtered_df) > 0 else 0
