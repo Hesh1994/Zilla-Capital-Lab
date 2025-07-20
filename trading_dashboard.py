@@ -138,22 +138,15 @@ def safe_column_access(df, column_candidates):
     if df is None or df.empty:
         return None
     
+    # Convert columns to list to avoid Series boolean issues
+    available_columns = list(df.columns)
+    
     # Try each column candidate
     for col_name in column_candidates:
         try:
-            # Check if it's a string (single-level column)
-            if isinstance(col_name, str) and col_name in df.columns:
+            # Direct lookup in the list
+            if col_name in available_columns:
                 return df[col_name]
-            
-            # Check if it's a tuple (MultiIndex column)
-            elif isinstance(col_name, tuple) and col_name in df.columns:
-                return df[col_name]
-            
-            # For MultiIndex, also try searching for the first level
-            elif isinstance(col_name, str) and hasattr(df.columns, 'levels'):
-                for col in df.columns:
-                    if isinstance(col, tuple) and col[0] == col_name:
-                        return df[col]
         except Exception:
             continue
     
@@ -723,11 +716,29 @@ if 'results' in st.session_state:
         # Calculate benchmark metrics
         if sp500_df is not None and not sp500_df.empty:
             try:
+                # Debug: Show available columns
+                st.write("**S&P 500 Debug - Available columns:**")
+                available_cols = list(sp500_df.columns)
+                st.write(f"Columns: {available_cols}")
+                st.write(f"Number of columns: {len(available_cols)}")
+                
                 # S&P 500 metrics - use safe column access
                 sp500_price_data = safe_column_access(sp500_df, ['Adj Close', 'Close', ('Adj Close', '^GSPC'), ('Close', '^GSPC')])
                 
                 if sp500_price_data is None:
+                    st.write("**Trying manual column access...**")
+                    # Try manual access for debugging
+                    if available_cols:
+                        first_col = available_cols[0]
+                        st.write(f"Trying first available column: {first_col}")
+                        sp500_price_data = sp500_df[first_col]
+                    else:
+                        raise ValueError("No columns found in S&P 500 data")
+                
+                if sp500_price_data is None:
                     raise ValueError("Unable to find price column in S&P 500 data")
+                
+                st.write(f"**Successfully accessed S&P 500 data:** {type(sp500_price_data)}")
                 
                 sp500_returns = sp500_price_data.pct_change().dropna()
                 
