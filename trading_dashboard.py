@@ -52,20 +52,64 @@ price_column = st.sidebar.selectbox("💰 Price Column", price_options, index=0)
 st.sidebar.markdown("---")
 st.sidebar.header("📊 Indicator Parameters")
 
+# Indicator descriptions
+indicator_descriptions = {
+    "RSI": "Relative Strength Index - Momentum oscillator (0-100). Values >70 suggest overbought, <30 oversold.",
+    "RSI_Mid": "Moving average of RSI values. Smooths RSI signals and reduces noise.",
+    "SMA": "Simple Moving Average - Average price over N periods. Trend indicator.",
+    "EMA": "Exponential Moving Average - Weighted average giving more importance to recent prices.",
+    "EMA_Seed": "Number of periods used to calculate the initial EMA value using SMA."
+}
+
 # RSI Parameters
 st.sidebar.subheader("RSI Settings")
-rsi_period = st.sidebar.slider("RSI Period", min_value=5, max_value=200, value=30, step=1)
-rsi_mid_period = st.sidebar.slider("RSI Mid Period", min_value=5, max_value=200, value=30, step=1)
+rsi_period = st.sidebar.slider(
+    "RSI Period", 
+    min_value=5, max_value=200, value=30, step=1,
+    help=f"{indicator_descriptions['RSI']} Period determines sensitivity: lower = more sensitive."
+)
+rsi_mid_period = st.sidebar.slider(
+    "RSI Mid Period", 
+    min_value=5, max_value=200, value=30, step=1,
+    help=f"{indicator_descriptions['RSI_Mid']} Higher values = smoother but slower signals."
+)
 
 # SMA/EMA Parameters
 st.sidebar.subheader("Moving Average Settings")
-sma_period = st.sidebar.slider("SMA Period", min_value=5, max_value=200, value=30, step=1)
-ema_period = st.sidebar.slider("EMA Period", min_value=5, max_value=200, value=15, step=1)
-ema_seed_period = st.sidebar.slider("EMA Seed Period", min_value=5, max_value=200, value=15, step=1)
+sma_period = st.sidebar.slider(
+    "SMA Period", 
+    min_value=5, max_value=200, value=30, step=1,
+    help=f"{indicator_descriptions['SMA']} Longer periods = smoother trends, slower signals."
+)
+ema_period = st.sidebar.slider(
+    "EMA Period", 
+    min_value=5, max_value=200, value=15, step=1,
+    help=f"{indicator_descriptions['EMA']} Lower periods = more responsive to price changes."
+)
+ema_seed_period = st.sidebar.slider(
+    "EMA Seed Period", 
+    min_value=5, max_value=200, value=15, step=1,
+    help=f"{indicator_descriptions['EMA_Seed']} Usually equals EMA period for standard calculation."
+)
 
 # Strategy Selection
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 Strategy Selection")
+
+# Strategy descriptions
+strategy_descriptions = {
+    "RSI_ONLY": "Signal: (1,0,0) - Buy when RSI > RSI_Mid, Sell when RSI < RSI_Mid. Pure momentum strategy based on relative strength.",
+    "RSI_50_ONLY": "Signal: (0,1,0) - Buy when RSI_Mid > 50, Sell when RSI_Mid < 50. Trend following based on RSI midpoint.",
+    "SMA_ONLY": "Signal: (0,0,1) - Buy when EMA > SMA, Sell when EMA < SMA. Moving average crossover strategy.",
+    "RSI_WITH_RSI_50": "Signal: (1,1,0) - Buy when RSI > RSI_Mid AND RSI_Mid > 50. Strong momentum with bullish trend.",
+    "SMA_WITH_RSI": "Signal: (1,0,1) - Buy when RSI > RSI_Mid AND EMA > SMA. Momentum with trend confirmation.",
+    "SMA_RSI_50_COMBO": "Signal: (0,1,1) - Buy when RSI_Mid > 50 AND EMA > SMA. Trend following with moving average support.",
+    "RSI_RSI50_SMA_COMBO": "Signal: (1,1,1) - Buy when ALL conditions met: RSI > RSI_Mid AND RSI_Mid > 50 AND EMA > SMA. Triple confirmation strategy.",
+    "RSI_RSI50_COMBO": "Signal: (1,1,0) - Buy when RSI > RSI_Mid AND RSI_Mid > 50. Strong momentum strategy ignoring moving averages.",
+    "RSI_SMA_COMBO": "Signal: (1,0,1) - Buy when RSI > RSI_Mid AND EMA > SMA. Momentum with trend confirmation, ignoring RSI midpoint.",
+    "RSI50_SMA_COMBO": "Signal: (0,1,1) - Buy when RSI_Mid > 50 AND EMA > SMA. Trend following with moving average confirmation."
+}
+
 strategy_options = [
     "RSI_ONLY",
     "RSI_50_ONLY", 
@@ -79,11 +123,27 @@ strategy_options = [
     "RSI50_SMA_COMBO"
 ]
 
+# Display strategy options with descriptions
+st.sidebar.markdown("**💡 Strategy Guide:**")
+st.sidebar.markdown("**Signal Format: (RSI_Signal, RSI50_Signal, SMA_Signal)**")
+st.sidebar.markdown("- **1** = Bullish condition met")
+st.sidebar.markdown("- **0** = Bearish condition met")
+
 selected_strategies = st.sidebar.multiselect(
     "Select Strategies to Backtest",
     strategy_options,
-    default=["RSI_ONLY", "RSI_50_ONLY", "SMA_ONLY", "RSI_RSI50_COMBO"]
+    default=["RSI_ONLY", "RSI_50_ONLY", "SMA_ONLY", "RSI_RSI50_COMBO"],
+    help="Choose trading strategies to analyze. Hover over strategy names in results for detailed descriptions."
 )
+
+# Display selected strategy descriptions
+if selected_strategies:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**📋 Selected Strategy Descriptions:**")
+    for strategy in selected_strategies:
+        if strategy in strategy_descriptions:
+            with st.sidebar.expander(f"📖 {strategy}"):
+                st.markdown(strategy_descriptions[strategy])
 
 # Analysis Functions
 @st.cache_data
@@ -323,6 +383,61 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
     else:
         return pd.DataFrame()
 
+def get_strategy_signal_mapping():
+    """Return strategy to signal combination mapping with descriptions"""
+    return {
+        "RSI_ONLY": {
+            "signal": "(1,0,0)",
+            "description": "Buy when RSI > RSI_Mid, Sell when RSI < RSI_Mid",
+            "type": "Pure momentum strategy based on relative strength"
+        },
+        "RSI_50_ONLY": {
+            "signal": "(0,1,0)", 
+            "description": "Buy when RSI_Mid > 50, Sell when RSI_Mid < 50",
+            "type": "Trend following based on RSI midpoint"
+        },
+        "SMA_ONLY": {
+            "signal": "(0,0,1)",
+            "description": "Buy when EMA > SMA, Sell when EMA < SMA", 
+            "type": "Moving average crossover strategy"
+        },
+        "RSI_WITH_RSI_50": {
+            "signal": "(1,1,0)",
+            "description": "Buy when RSI > RSI_Mid AND RSI_Mid > 50",
+            "type": "Strong momentum with bullish trend confirmation"
+        },
+        "SMA_WITH_RSI": {
+            "signal": "(1,0,1)",
+            "description": "Buy when RSI > RSI_Mid AND EMA > SMA",
+            "type": "Momentum with trend confirmation"
+        },
+        "SMA_RSI_50_COMBO": {
+            "signal": "(0,1,1)",
+            "description": "Buy when RSI_Mid > 50 AND EMA > SMA",
+            "type": "Trend following with moving average support"
+        },
+        "RSI_RSI50_SMA_COMBO": {
+            "signal": "(1,1,1)",
+            "description": "Buy when RSI > RSI_Mid AND RSI_Mid > 50 AND EMA > SMA",
+            "type": "Triple confirmation strategy - most conservative"
+        },
+        "RSI_RSI50_COMBO": {
+            "signal": "(1,1,0)",
+            "description": "Buy when RSI > RSI_Mid AND RSI_Mid > 50",
+            "type": "Strong momentum strategy ignoring moving averages"
+        },
+        "RSI_SMA_COMBO": {
+            "signal": "(1,0,1)",
+            "description": "Buy when RSI > RSI_Mid AND EMA > SMA", 
+            "type": "Momentum with trend confirmation, ignoring RSI midpoint"
+        },
+        "RSI50_SMA_COMBO": {
+            "signal": "(0,1,1)",
+            "description": "Buy when RSI_Mid > 50 AND EMA > SMA",
+            "type": "Trend following with moving average confirmation"
+        }
+    }
+
 def create_summary_table(all_results, df, frequency="Daily"):
     """Create comparative summary table with max drawdown and Sharpe ratio"""
     summary_data = []
@@ -535,14 +650,81 @@ if 'results' in st.session_state:
             st.error(f"Error calculating benchmark metrics: {e}")
             st.info("Unable to calculate buy & hold performance metrics")
         
+        # Quick Reference for Indicators
+        st.info("💡 **Quick Reference** | RSI: Momentum (>RSI_Mid = bullish) | RSI_Mid: Trend (>50 = bullish) | SMA: Moving Average Crossover (EMA>SMA = bullish)")
+        
         if all_results:
             summary_df = create_summary_table(all_results, df, data_frequency)
             
-            # Display summary table
+            # Add strategy information section
+            st.subheader("📊 Strategy Performance Summary")
+            
+            # Get strategy mapping
+            strategy_mapping = get_strategy_signal_mapping()
+            
+            # Strategy legend with signal combinations
+            with st.expander("📖 Strategy Signal Combinations Guide", expanded=False):
+                st.markdown("**Signal Format: (RSI_Signal, RSI50_Signal, SMA_Signal)**")
+                st.markdown("**1** = Bullish condition met | **0** = Bearish condition met | ***** = Condition ignored")
+                
+                # Create strategy reference table
+                strategy_ref_data = []
+                for strategy in selected_strategies:
+                    if strategy in strategy_mapping:
+                        info = strategy_mapping[strategy]
+                        strategy_ref_data.append({
+                            "Strategy": strategy,
+                            "Signal": info["signal"],
+                            "Description": info["description"],
+                            "Type": info["type"]
+                        })
+                
+                if strategy_ref_data:
+                    strategy_ref_df = pd.DataFrame(strategy_ref_data)
+                    st.dataframe(
+                        strategy_ref_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Strategy": st.column_config.TextColumn("Strategy", width="medium"),
+                            "Signal": st.column_config.TextColumn("Signal Combo", width="small"),
+                            "Description": st.column_config.TextColumn("Entry/Exit Rules", width="large"),
+                            "Type": st.column_config.TextColumn("Strategy Type", width="medium")
+                        }
+                    )
+            
+            # Display summary table with enhanced formatting
             st.dataframe(
                 summary_df,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "Strategy": st.column_config.TextColumn(
+                        "Strategy",
+                        help="Strategy name - expand legend above for signal combinations",
+                        width="medium"
+                    ),
+                    "Total Trades": st.column_config.NumberColumn(
+                        "Total Trades",
+                        help="Number of trades after minimum duration filtering"
+                    ),
+                    "Win Rate": st.column_config.TextColumn(
+                        "Win Rate", 
+                        help="Percentage of profitable trades (positive buy returns + negative sell returns)"
+                    ),
+                    "Total Return": st.column_config.TextColumn(
+                        "Total Return",
+                        help="Cumulative return from all trades in the strategy"
+                    ),
+                    "Max Drawdown": st.column_config.TextColumn(
+                        "Max Drawdown",
+                        help="Maximum peak-to-trough decline in strategy value"
+                    ),
+                    "Sharpe Ratio": st.column_config.TextColumn(
+                        "Sharpe Ratio", 
+                        help="Risk-adjusted return metric (return/volatility)"
+                    )
+                }
             )
             
             # Add separate buy and sell trade statistics tables
