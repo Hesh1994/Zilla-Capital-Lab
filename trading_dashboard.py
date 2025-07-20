@@ -439,6 +439,111 @@ if 'results' in st.session_state:
                 hide_index=True
             )
             
+            # Add separate buy and sell trade statistics tables
+            st.subheader("📈 Buy Trades Statistics")
+            buy_summary_data = []
+            
+            for name, result_df in all_results.items():
+                if len(result_df) > 0:
+                    # Buy return statistics
+                    buy_trades = result_df[result_df['buy_return'] != 0]
+                    num_buy_trades = (buy_trades['period_length'] > 1).sum()
+                    num_positive_buy = (buy_trades['buy_return'] > 0).sum()
+                    
+                    buy_win_rate = num_positive_buy / num_buy_trades if num_buy_trades > 0 else 0
+                    avg_buy_return = buy_trades[buy_trades['buy_return'] > 0]['buy_return'].mean() if num_positive_buy > 0 else 0
+                    total_buy_return = (1 + buy_trades['buy_return']).prod() - 1 if len(buy_trades) > 0 else 0
+                    
+                    # Length statistics for buy trades
+                    multi_day_buy_trades = buy_trades[buy_trades['period_length'] > 1]
+                    if len(multi_day_buy_trades) > 0:
+                        longest_buy_trade = multi_day_buy_trades['period_length'].max()
+                        shortest_buy_trade = multi_day_buy_trades['period_length'].min()
+                        avg_buy_length = multi_day_buy_trades['period_length'].mean()
+                    else:
+                        longest_buy_trade = shortest_buy_trade = avg_buy_length = 0
+                    
+                    buy_summary_data.append({
+                        'Strategy': name,
+                        'Total Trades': num_buy_trades,
+                        'Win Rate': f"{buy_win_rate:.2%}" if num_buy_trades > 0 else "N/A",
+                        'Avg Return': f"{avg_buy_return:.2%}" if num_positive_buy > 0 else "N/A",
+                        'Total Return': f"{total_buy_return:.2%}",
+                        'Longest Trade': longest_buy_trade if longest_buy_trade > 0 else "N/A",
+                        'Shortest Trade': shortest_buy_trade if shortest_buy_trade > 0 else "N/A",
+                        'Avg Length': f"{avg_buy_length:.1f}" if avg_buy_length > 0 else "N/A"
+                    })
+                else:
+                    buy_summary_data.append({
+                        'Strategy': name,
+                        'Total Trades': 0,
+                        'Win Rate': "N/A",
+                        'Avg Return': "N/A",
+                        'Total Return': "N/A",
+                        'Longest Trade': "N/A",
+                        'Shortest Trade': "N/A",
+                        'Avg Length': "N/A"
+                    })
+            
+            buy_summary_df = pd.DataFrame(buy_summary_data)
+            st.dataframe(
+                buy_summary_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.subheader("📉 Sell Trades Statistics")
+            sell_summary_data = []
+            
+            for name, result_df in all_results.items():
+                if len(result_df) > 0:
+                    # Sell return statistics  
+                    sell_trades = result_df[result_df['sell_return'] != 0]
+                    num_sell_trades = (sell_trades['period_length'] > 1).sum()
+                    num_positive_sell = (sell_trades['sell_return'] > 0).sum()
+                    
+                    sell_win_rate = num_positive_sell / num_sell_trades if num_sell_trades > 0 else 0
+                    avg_sell_return = sell_trades[sell_trades['sell_return'] > 0]['sell_return'].mean() if num_positive_sell > 0 else 0
+                    total_sell_return = (1 + sell_trades['sell_return']).prod() - 1 if len(sell_trades) > 0 else 0
+                    
+                    # Length statistics for sell trades
+                    multi_day_sell_trades = sell_trades[sell_trades['period_length'] > 1]
+                    if len(multi_day_sell_trades) > 0:
+                        longest_sell_trade = multi_day_sell_trades['period_length'].max()
+                        shortest_sell_trade = multi_day_sell_trades['period_length'].min()
+                        avg_sell_length = multi_day_sell_trades['period_length'].mean()
+                    else:
+                        longest_sell_trade = shortest_sell_trade = avg_sell_length = 0
+                    
+                    sell_summary_data.append({
+                        'Strategy': name,
+                        'Total Trades': num_sell_trades,
+                        'Win Rate': f"{sell_win_rate:.2%}" if num_sell_trades > 0 else "N/A",
+                        'Avg Return': f"{avg_sell_return:.2%}" if num_positive_sell > 0 else "N/A",
+                        'Total Return': f"{total_sell_return:.2%}",
+                        'Longest Trade': longest_sell_trade if longest_sell_trade > 0 else "N/A",
+                        'Shortest Trade': shortest_sell_trade if shortest_sell_trade > 0 else "N/A",
+                        'Avg Length': f"{avg_sell_length:.1f}" if avg_sell_length > 0 else "N/A"
+                    })
+                else:
+                    sell_summary_data.append({
+                        'Strategy': name,
+                        'Total Trades': 0,
+                        'Win Rate': "N/A",
+                        'Avg Return': "N/A",
+                        'Total Return': "N/A",
+                        'Longest Trade': "N/A",
+                        'Shortest Trade': "N/A",
+                        'Avg Length': "N/A"
+                    })
+            
+            sell_summary_df = pd.DataFrame(sell_summary_data)
+            st.dataframe(
+                sell_summary_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
             # Performance metrics cards
             st.subheader("🏆 Top Performers")
             
