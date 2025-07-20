@@ -1,7 +1,9 @@
 streamlit>=1.28.0
 plotly>=5.17.0
 yfinance>=0.2.18
+ta>=0.10.2
 pandas>=1.5.0,<2.0.0
 numpy>=1.21.0,<2.0.0
 setuptools>=65.0.0
-ta>=0.10.2
+
+
