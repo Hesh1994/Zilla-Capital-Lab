@@ -653,58 +653,87 @@ if 'results' in st.session_state:
                 hide_index=True
             )
             
-            # Performance metrics cards
-            st.subheader("🏆 Top Performers")
+            # Buy & Hold Benchmark Analysis
+            st.subheader("📊 Buy & Hold Benchmark Analysis")
             
-            col1, col2, col3, col4 = st.columns(4)
-            
-            # Filter out N/A values for ranking
-            valid_returns = summary_df[summary_df['Total Return'] != 'N/A'].copy()
-            if not valid_returns.empty:
-                valid_returns['Total Return Numeric'] = valid_returns['Total Return'].str.rstrip('%').astype(float)
-                best_strategy = valid_returns.loc[valid_returns['Total Return Numeric'].idxmax()]
+            try:
+                # Calculate stock buy & hold metrics
+                stock_price_data = safe_column_access(df, [(price_column, ticker)])
+                if stock_price_data is not None:
+                    stock_returns = stock_price_data.pct_change().dropna()
+                    if not stock_returns.empty:
+                        stock_total_return = (1 + stock_returns).prod() - 1
+                        stock_max_drawdown = calculate_max_drawdown(stock_returns)
+                        stock_sharpe = calculate_sharpe_ratio(stock_returns)
+                    else:
+                        stock_total_return = stock_max_drawdown = stock_sharpe = 0
+                else:
+                    stock_total_return = stock_max_drawdown = stock_sharpe = 0
+                
+                # Calculate S&P 500 buy & hold metrics
+                sp500_total_return = sp500_max_drawdown = sp500_sharpe = 0
+                if sp500_df is not None and not sp500_df.empty:
+                    try:
+                        sp500_price_data = safe_column_access(sp500_df, ['Adj Close', 'Close', ('Adj Close', '^GSPC'), ('Close', '^GSPC')])
+                        if sp500_price_data is None and list(sp500_df.columns):
+                            sp500_price_data = sp500_df[list(sp500_df.columns)[0]]
+                        
+                        if sp500_price_data is not None:
+                            sp500_returns = sp500_price_data.pct_change().dropna()
+                            if not sp500_returns.empty:
+                                sp500_total_return = (1 + sp500_returns).prod() - 1
+                                sp500_max_drawdown = calculate_max_drawdown(sp500_returns)
+                                sp500_sharpe = calculate_sharpe_ratio(sp500_returns)
+                    except Exception:
+                        pass
+                
+                # Display benchmark metrics
+                col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.metric(
-                        "🥇 Best Total Return",
-                        best_strategy['Strategy'],
-                        best_strategy['Total Return']
-                    )
-            
-            valid_trades = summary_df[summary_df['Total Trades'] != 0]
-            if not valid_trades.empty:
-                most_active = valid_trades.loc[valid_trades['Total Trades'].idxmax()]
+                    st.markdown("**📈 Stock Buy & Hold Performance**")
+                    subcol1, subcol2, subcol3 = st.columns(3)
+                    with subcol1:
+                        st.metric(f"{ticker} Total Return", f"{stock_total_return:.2%}")
+                    with subcol2:
+                        st.metric("Max Drawdown", f"{stock_max_drawdown:.2%}")
+                    with subcol3:
+                        st.metric("Sharpe Ratio", f"{stock_sharpe:.2f}")
                 
                 with col2:
-                    st.metric(
-                        "📈 Most Active Strategy",
-                        most_active['Strategy'],
-                        f"{most_active['Total Trades']} trades"
-                    )
-            
-            valid_sharpe = summary_df[summary_df['Sharpe Ratio'] != 'N/A'].copy()
-            if not valid_sharpe.empty:
-                valid_sharpe['Sharpe Ratio Numeric'] = valid_sharpe['Sharpe Ratio'].astype(float)
-                best_sharpe = valid_sharpe.loc[valid_sharpe['Sharpe Ratio Numeric'].idxmax()]
+                    st.markdown("**📊 S&P 500 Buy & Hold Performance**")
+                    subcol1, subcol2, subcol3 = st.columns(3)
+                    with subcol1:
+                        st.metric("S&P 500 Total Return", f"{sp500_total_return:.2%}")
+                    with subcol2:
+                        st.metric("Max Drawdown", f"{sp500_max_drawdown:.2%}")
+                    with subcol3:
+                        st.metric("Sharpe Ratio", f"{sp500_sharpe:.2f}")
                 
-                with col3:
-                    st.metric(
-                        "⚡ Best Sharpe Ratio",
-                        best_sharpe['Strategy'],
-                        best_sharpe['Sharpe Ratio']
-                    )
-            
-            valid_drawdown = summary_df[summary_df['Max Drawdown'] != 'N/A'].copy()
-            if not valid_drawdown.empty:
-                valid_drawdown['Max Drawdown Numeric'] = valid_drawdown['Max Drawdown'].str.rstrip('%').astype(float)
-                best_drawdown = valid_drawdown.loc[valid_drawdown['Max Drawdown Numeric'].idxmax()]  # Closest to 0
+                # Performance comparison
+                if stock_total_return != 0 and sp500_total_return != 0:
+                    st.markdown("**📊 Performance Comparison**")
+                    comp_col1, comp_col2, comp_col3 = st.columns(3)
+                    
+                    with comp_col1:
+                        return_diff = stock_total_return - sp500_total_return
+                        st.metric("Return Difference", f"{return_diff:.2%}", 
+                                f"Stock vs S&P 500")
+                    
+                    with comp_col2:
+                        if sp500_total_return != 0:
+                            return_ratio = stock_total_return / sp500_total_return
+                            st.metric("Return Ratio", f"{return_ratio:.2f}x", 
+                                    f"Stock / S&P 500")
+                    
+                    with comp_col3:
+                        sharpe_diff = stock_sharpe - sp500_sharpe
+                        st.metric("Sharpe Difference", f"{sharpe_diff:.2f}", 
+                                f"Stock vs S&P 500")
                 
-                with col4:
-                    st.metric(
-                        "🛡️ Lowest Drawdown",
-                        best_drawdown['Strategy'],
-                        best_drawdown['Max Drawdown']
-                    )
+            except Exception as e:
+                st.error(f"Error calculating benchmark metrics: {e}")
+                st.info("Unable to calculate buy & hold performance metrics")
     
     with tab2:
         st.header("📈 Performance Charts")
