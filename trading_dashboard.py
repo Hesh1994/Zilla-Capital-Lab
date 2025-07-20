@@ -248,7 +248,7 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
     # Calculate sell returns (short positions)
     df[f'sell_returns_{combo_name}'] = np.where(
         df[f'signal_diff_{combo_name}'] == 1,
-        -df[f'trad_price_{combo_name}'].pct_change(),  # Negative because we profit when price goes down
+        df[f'trad_price_{combo_name}'].pct_change(),  # Regular percentage change calculation
         0
     )
     df[f'sell_returns_{combo_name}'] = df[f'sell_returns_{combo_name}'].replace([np.inf, -np.inf], 0)
@@ -274,7 +274,7 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
                 sell_return = 0
             elif period_data[f'signal_diff_shifted_{combo_name}'].iloc[0] == -1:
                 # Sell signal - short position  
-                sell_return = (price_start - price_end) / price_start  # Profit when price goes down (inverted for short)
+                sell_return = (price_end - price_start) / price_start  # Regular return calculation to match notebook
                 period_return = 0
             else:
                 period_return = 0
