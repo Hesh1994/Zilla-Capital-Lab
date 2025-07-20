@@ -46,14 +46,14 @@ st.sidebar.header("📊 Indicator Parameters")
 
 # RSI Parameters
 st.sidebar.subheader("RSI Settings")
-rsi_period = st.sidebar.slider("RSI Period", min_value=5, max_value=50, value=30, step=1)
-rsi_mid_period = st.sidebar.slider("RSI Mid Period", min_value=5, max_value=50, value=30, step=1)
+rsi_period = st.sidebar.slider("RSI Period", min_value=5, max_value=200, value=30, step=1)
+rsi_mid_period = st.sidebar.slider("RSI Mid Period", min_value=5, max_value=200, value=30, step=1)
 
 # SMA/EMA Parameters
 st.sidebar.subheader("Moving Average Settings")
-sma_period = st.sidebar.slider("SMA Period", min_value=5, max_value=100, value=30, step=1)
-ema_period = st.sidebar.slider("EMA Period", min_value=5, max_value=50, value=15, step=1)
-ema_seed_period = st.sidebar.slider("EMA Seed Period", min_value=5, max_value=30, value=15, step=1)
+sma_period = st.sidebar.slider("SMA Period", min_value=5, max_value=200, value=30, step=1)
+ema_period = st.sidebar.slider("EMA Period", min_value=5, max_value=200, value=15, step=1)
+ema_seed_period = st.sidebar.slider("EMA Seed Period", min_value=5, max_value=200, value=15, step=1)
 
 # Strategy Selection
 st.sidebar.markdown("---")
@@ -87,6 +87,30 @@ def download_data(ticker, start_date, end_date):
     except Exception as e:
         st.error(f"Error downloading data: {e}")
         return None
+
+@st.cache_data
+def download_sp500_data(start_date, end_date):
+    """Download S&P 500 data for comparison"""
+    try:
+        sp500_data = yf.download(tickers='^GSPC', start=start_date, end=end_date, interval='1d', auto_adjust=False)
+        return sp500_data
+    except Exception as e:
+        st.error(f"Error downloading S&P 500 data: {e}")
+        return None
+
+def calculate_max_drawdown(returns_series):
+    """Calculate maximum drawdown from a returns series"""
+    cumulative = (1 + returns_series).cumprod()
+    rolling_max = cumulative.expanding().max()
+    drawdown = (cumulative - rolling_max) / rolling_max
+    return drawdown.min()
+
+def calculate_sharpe_ratio(returns_series, risk_free_rate=0.02):
+    """Calculate Sharpe ratio (assuming 2% risk-free rate)"""
+    excess_returns = returns_series - risk_free_rate/252  # Daily risk-free rate
+    if excess_returns.std() == 0:
+        return 0
+    return (excess_returns.mean() * 252) / (excess_returns.std() * np.sqrt(252))
 
 def calculate_indicators(df, ticker, price_col, rsi_period, rsi_mid_period, sma_period, ema_period, ema_seed_period):
     """Calculate technical indicators"""
@@ -172,7 +196,7 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
     )
     df[f'trad_price_{combo_name}'] = df[f'trad_price_{combo_name}'].fillna(method='ffill')
 
-    # Returns - only calculate when signal_diff is -1 (sell signal)
+    # Returns - calculate both buy and sell returns
     df[f'returns_{combo_name}'] = np.where(
         df[f'signal_diff_{combo_name}'] == -1,
         df[f'trad_price_{combo_name}'].pct_change(),
@@ -180,6 +204,15 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
     )
     df[f'returns_{combo_name}'] = df[f'returns_{combo_name}'].replace([np.inf, -np.inf], 0)   
     df[f'ret_acc_{combo_name}'] = (1 + df[f'returns_{combo_name}']).cumprod()
+
+    # Calculate sell returns (short positions)
+    df[f'sell_returns_{combo_name}'] = np.where(
+        df[f'signal_diff_{combo_name}'] == 1,
+        -df[f'trad_price_{combo_name}'].pct_change(),  # Negative because we profit when price goes down
+        0
+    )
+    df[f'sell_returns_{combo_name}'] = df[f'sell_returns_{combo_name}'].replace([np.inf, -np.inf], 0)
+    df[f'sell_ret_acc_{combo_name}'] = (1 + df[f'sell_returns_{combo_name}']).cumprod()
 
     # Analyze periods
     period_returns = []
@@ -191,12 +224,21 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
         period_data = df[df[f'signal_period_{combo_name}'] == period_id]
         price_col_data = period_data[price_col, ticker]
         
-        if len(period_data) > 1 and period_data[f'signal_diff_shifted_{combo_name}'].iloc[0] == 1:
-            period_return = (price_col_data.iloc[-1] - price_col_data.iloc[0]) / price_col_data.iloc[0]
-            sell_return = 0
-        elif len(period_data) > 1 and period_data[f'signal_diff_shifted_{combo_name}'].iloc[0] == -1:
-            sell_return = (price_col_data.iloc[-1] - price_col_data.iloc[0]) / price_col_data.iloc[0]
-            period_return = 0
+        if len(period_data) > 1:
+            price_start = price_col_data.iloc[0]
+            price_end = price_col_data.iloc[-1]
+            
+            if period_data[f'signal_diff_shifted_{combo_name}'].iloc[0] == 1:
+                # Buy signal - long position
+                period_return = (price_end - price_start) / price_start
+                sell_return = 0
+            elif period_data[f'signal_diff_shifted_{combo_name}'].iloc[0] == -1:
+                # Sell signal - short position  
+                sell_return = (price_start - price_end) / price_start  # Profit when price goes down
+                period_return = 0
+            else:
+                period_return = 0
+                sell_return = 0
         else:
             period_return = 0
             sell_return = 0
@@ -217,19 +259,33 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
     else:
         return pd.DataFrame()
 
-def create_summary_table(all_results):
-    """Create comparative summary table"""
+def create_summary_table(all_results, df):
+    """Create comparative summary table with max drawdown and Sharpe ratio"""
     summary_data = []
     
     for name, result_df in all_results.items():
         if len(result_df) > 0:
             num_trades = (result_df['period_length'] > 1).sum()
-            num_positive = (result_df['buy_return'] > 0).sum()
-            num_negative = (result_df['sell_return'] < 0).sum()
+            num_positive_buy = (result_df['buy_return'] > 0).sum()
+            num_positive_sell = (result_df['sell_return'] > 0).sum()
+            total_positive = num_positive_buy + num_positive_sell
 
-            win_rate = (num_positive + num_negative) / num_trades if num_trades > 0 else 0
-            avg_return = result_df[result_df['buy_return'] > 0]['buy_return'].mean() if num_positive > 0 else 0
-            total_return = (1 + result_df['buy_return']).prod() - 1
+            win_rate = total_positive / num_trades if num_trades > 0 else 0
+            avg_buy_return = result_df[result_df['buy_return'] > 0]['buy_return'].mean() if num_positive_buy > 0 else 0
+            avg_sell_return = result_df[result_df['sell_return'] > 0]['sell_return'].mean() if num_positive_sell > 0 else 0
+            
+            # Calculate total return combining both buy and sell
+            total_return_buy = (1 + result_df['buy_return']).prod() - 1
+            total_return_sell = (1 + result_df['sell_return']).prod() - 1
+            combined_total_return = total_return_buy + total_return_sell
+
+            # Calculate max drawdown and Sharpe ratio if strategy returns exist
+            max_drawdown = 0
+            sharpe_ratio = 0
+            if f'returns_{name}' in df.columns:
+                strategy_returns = df[f'returns_{name}'].fillna(0)
+                max_drawdown = calculate_max_drawdown(strategy_returns)
+                sharpe_ratio = calculate_sharpe_ratio(strategy_returns)
 
             # Calculate additional statistics for all periods excluding one-day trades
             multi_day_trades = result_df[result_df['period_length'] > 1]
@@ -244,8 +300,11 @@ def create_summary_table(all_results):
                 'Strategy': name,
                 'Total Trades': num_trades,
                 'Win Rate': f"{win_rate:.2%}",
-                'Avg Return': f"{avg_return:.2%}" if num_positive > 0 else "N/A",
-                'Total Return': f"{total_return:.2%}",
+                'Avg Buy Return': f"{avg_buy_return:.2%}" if num_positive_buy > 0 else "N/A",
+                'Avg Sell Return': f"{avg_sell_return:.2%}" if num_positive_sell > 0 else "N/A",
+                'Total Return': f"{combined_total_return:.2%}",
+                'Max Drawdown': f"{max_drawdown:.2%}",
+                'Sharpe Ratio': f"{sharpe_ratio:.2f}" if sharpe_ratio != 0 else "N/A",
                 'Longest Trade': longest_trade,
                 'Shortest Trade': shortest_trade,
                 'Avg Length': f"{avg_length:.1f}" if avg_length > 0 else "N/A"
@@ -255,8 +314,11 @@ def create_summary_table(all_results):
                 'Strategy': name,
                 'Total Trades': 0,
                 'Win Rate': "N/A",
-                'Avg Return': "N/A",
+                'Avg Buy Return': "N/A",
+                'Avg Sell Return': "N/A",
                 'Total Return': "N/A",
+                'Max Drawdown': "N/A",
+                'Sharpe Ratio': "N/A",
                 'Longest Trade': "N/A",
                 'Shortest Trade': "N/A",
                 'Avg Length': "N/A"
@@ -270,8 +332,11 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
         st.error("Please select at least one strategy to analyze.")
     else:
         with st.spinner("Downloading data and running analysis..."):
-            # Download data
+            # Download stock data
             df = download_data(ticker, start_date, end_date)
+            
+            # Download S&P 500 data for comparison
+            sp500_df = download_sp500_data(start_date, end_date)
             
             if df is not None and not df.empty:
                 # Calculate indicators
@@ -306,6 +371,7 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
                 # Store results in session state
                 st.session_state['results'] = all_results
                 st.session_state['df'] = df
+                st.session_state['sp500_df'] = sp500_df
                 st.session_state['ticker'] = ticker
                 st.session_state['price_column'] = price_column
 
@@ -313,17 +379,18 @@ if st.sidebar.button("🚀 Run Analysis", type="primary"):
 if 'results' in st.session_state:
     all_results = st.session_state['results']
     df = st.session_state['df']
+    sp500_df = st.session_state.get('sp500_df', None)
     ticker = st.session_state['ticker']
     price_column = st.session_state['price_column']
     
     # Create tabs for different views
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Summary", "📈 Charts", "🔍 Detailed Analysis", "📋 Raw Data"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Summary", "📈 Charts", "🔍 Detailed Analysis", "📋 Raw Data", "📉 Risk Analysis"])
     
     with tab1:
         st.header("📊 Strategy Performance Summary")
         
         if all_results:
-            summary_df = create_summary_table(all_results)
+            summary_df = create_summary_table(all_results, df)
             
             # Display summary table
             st.dataframe(
@@ -335,7 +402,7 @@ if 'results' in st.session_state:
             # Performance metrics cards
             st.subheader("🏆 Top Performers")
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             
             # Filter out N/A values for ranking
             valid_returns = summary_df[summary_df['Total Return'] != 'N/A'].copy()
@@ -361,16 +428,28 @@ if 'results' in st.session_state:
                         f"{most_active['Total Trades']} trades"
                     )
             
-            valid_win_rates = summary_df[summary_df['Win Rate'] != 'N/A'].copy()
-            if not valid_win_rates.empty:
-                valid_win_rates['Win Rate Numeric'] = valid_win_rates['Win Rate'].str.rstrip('%').astype(float)
-                best_win_rate = valid_win_rates.loc[valid_win_rates['Win Rate Numeric'].idxmax()]
+            valid_sharpe = summary_df[summary_df['Sharpe Ratio'] != 'N/A'].copy()
+            if not valid_sharpe.empty:
+                valid_sharpe['Sharpe Ratio Numeric'] = valid_sharpe['Sharpe Ratio'].astype(float)
+                best_sharpe = valid_sharpe.loc[valid_sharpe['Sharpe Ratio Numeric'].idxmax()]
                 
                 with col3:
                     st.metric(
-                        "🎯 Highest Win Rate",
-                        best_win_rate['Strategy'],
-                        best_win_rate['Win Rate']
+                        "⚡ Best Sharpe Ratio",
+                        best_sharpe['Strategy'],
+                        best_sharpe['Sharpe Ratio']
+                    )
+            
+            valid_drawdown = summary_df[summary_df['Max Drawdown'] != 'N/A'].copy()
+            if not valid_drawdown.empty:
+                valid_drawdown['Max Drawdown Numeric'] = valid_drawdown['Max Drawdown'].str.rstrip('%').astype(float)
+                best_drawdown = valid_drawdown.loc[valid_drawdown['Max Drawdown Numeric'].idxmax()]  # Closest to 0
+                
+                with col4:
+                    st.metric(
+                        "🛡️ Lowest Drawdown",
+                        best_drawdown['Strategy'],
+                        best_drawdown['Max Drawdown']
                     )
     
     with tab2:
@@ -590,6 +669,100 @@ if 'results' in st.session_state:
             st.warning("No data columns available to display.")
             st.write("**All available DataFrame columns:**")
             st.write(list(df.columns))
+    
+    with tab5:
+        st.header("📉 Risk Analysis")
+        
+        # Calculate benchmark metrics
+        if sp500_df is not None and not sp500_df.empty:
+            sp500_returns = sp500_df['Adj Close'].pct_change().fillna(0)
+            sp500_max_drawdown = calculate_max_drawdown(sp500_returns)
+            sp500_sharpe = calculate_sharpe_ratio(sp500_returns)
+            sp500_total_return = (1 + sp500_returns).prod() - 1
+            
+            # Stock metrics
+            stock_returns = df[price_column, ticker].pct_change().fillna(0)
+            stock_max_drawdown = calculate_max_drawdown(stock_returns)
+            stock_sharpe = calculate_sharpe_ratio(stock_returns)
+            stock_total_return = (1 + stock_returns).prod() - 1
+            
+            st.subheader("📊 Benchmark Comparison")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("S&P 500 Total Return", f"{sp500_total_return:.2%}")
+                st.metric("S&P 500 Max Drawdown", f"{sp500_max_drawdown:.2%}")
+                st.metric("S&P 500 Sharpe Ratio", f"{sp500_sharpe:.2f}")
+            
+            with col2:
+                st.metric(f"{ticker} Total Return", f"{stock_total_return:.2%}")
+                st.metric(f"{ticker} Max Drawdown", f"{stock_max_drawdown:.2%}")
+                st.metric(f"{ticker} Sharpe Ratio", f"{stock_sharpe:.2f}")
+            
+            with col3:
+                return_diff = stock_total_return - sp500_total_return
+                drawdown_diff = stock_max_drawdown - sp500_max_drawdown
+                sharpe_diff = stock_sharpe - sp500_sharpe
+                
+                st.metric("Return vs S&P 500", f"{return_diff:.2%}")
+                st.metric("Drawdown vs S&P 500", f"{drawdown_diff:.2%}")
+                st.metric("Sharpe vs S&P 500", f"{sharpe_diff:.2f}")
+        
+        # Strategy risk comparison
+        st.subheader("🎯 Strategy Risk Metrics")
+        
+        risk_data = []
+        for name in all_results.keys():
+            if f'returns_{name}' in df.columns:
+                strategy_returns = df[f'returns_{name}'].fillna(0)
+                max_dd = calculate_max_drawdown(strategy_returns)
+                sharpe = calculate_sharpe_ratio(strategy_returns)
+                total_ret = (1 + strategy_returns).prod() - 1
+                volatility = strategy_returns.std() * np.sqrt(252)
+                
+                risk_data.append({
+                    'Strategy': name,
+                    'Total Return': f"{total_ret:.2%}",
+                    'Volatility': f"{volatility:.2%}",
+                    'Max Drawdown': f"{max_dd:.2%}",
+                    'Sharpe Ratio': f"{sharpe:.2f}",
+                    'Return/Risk': f"{total_ret/max(volatility, 0.001):.2f}"
+                })
+        
+        if risk_data:
+            risk_df = pd.DataFrame(risk_data)
+            st.dataframe(risk_df, use_container_width=True, hide_index=True)
+        
+        # Risk-Return scatter plot
+        if risk_data:
+            st.subheader("📈 Risk-Return Scatter Plot")
+            
+            fig_risk = go.Figure()
+            
+            for item in risk_data:
+                ret = float(item['Total Return'].rstrip('%')) / 100
+                vol = float(item['Volatility'].rstrip('%')) / 100
+                
+                fig_risk.add_trace(go.Scatter(
+                    x=[vol],
+                    y=[ret],
+                    mode='markers+text',
+                    name=item['Strategy'],
+                    text=[item['Strategy']],
+                    textposition="top center",
+                    marker=dict(size=10)
+                ))
+            
+            fig_risk.update_layout(
+                title="Risk vs Return Analysis",
+                xaxis_title="Volatility (Risk)",
+                yaxis_title="Total Return",
+                showlegend=False,
+                height=500
+            )
+            
+            st.plotly_chart(fig_risk, use_container_width=True)
 
 else:
     st.info("👆 Configure your analysis parameters in the sidebar and click 'Run Analysis' to get started!")
