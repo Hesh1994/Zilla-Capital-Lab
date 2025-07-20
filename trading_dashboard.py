@@ -274,7 +274,7 @@ def analyze_signal_combination(df, combo_tuple, combo_name, ticker, price_col):
                 sell_return = 0
             elif period_data[f'signal_diff_shifted_{combo_name}'].iloc[0] == -1:
                 # Sell signal - short position  
-                sell_return = (price_start - price_end) / price_start  # Profit when price goes down
+                sell_return = (price_start - price_end) / price_start  # Profit when price goes down (inverted for short)
                 period_return = 0
             else:
                 period_return = 0
