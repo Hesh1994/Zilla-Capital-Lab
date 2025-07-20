@@ -1,3 +1,6 @@
+# Trading Strategy Backtesting Dashboard - Version 3.0
+# Updated: July 20, 2025 - Completely self-contained with manual calculations
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,35 +8,18 @@ import yfinance as yf
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
-import itertools
 import warnings
 warnings.filterwarnings('ignore')
 
-# Try to import technical analysis libraries
-USE_PANDAS_TA = False
-USE_TA = False
-
-try:
-    import pandas_ta
-    USE_PANDAS_TA = True
-    st.sidebar.success("✅ Using pandas_ta library")
-except ImportError:
-    try:
-        import ta
-        USE_TA = True
-        st.sidebar.success("✅ Using ta library")
-    except ImportError:
-        st.sidebar.error("❌ No technical analysis library available")
-        st.error("Please install either 'pandas_ta' or 'ta' library")
-        st.stop()
-
-# Set page config
+# Set page config first
 st.set_page_config(
     page_title="Trading Strategy Dashboard",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+st.sidebar.success("✅ Using manual technical analysis calculations")
 
 st.title("📈 Trading Strategy Backtesting Dashboard")
 st.markdown("---")
@@ -125,18 +111,12 @@ def calculate_indicators(df, ticker, price_col, rsi_period, rsi_mid_period, sma_
     df['ema_manual'] = ema_values
     df['sma'] = df[price_col, ticker].rolling(window=sma_period).mean()
     
-    # Calculate RSI using available library
-    if USE_PANDAS_TA:
-        df['rsi'] = pandas_ta.rsi(df[price_col, ticker], length=rsi_period)
-    elif USE_TA:
-        df['rsi'] = ta.momentum.rsi(df[price_col, ticker], window=rsi_period)
-    else:
-        # Manual RSI calculation as fallback
-        delta = df[price_col, ticker].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
-        rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
+    # Calculate RSI manually (Relative Strength Index)
+    delta = df[price_col, ticker].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+    rs = gain / loss
+    df['rsi'] = 100 - (100 / (1 + rs))
     
     df['rsi_mid'] = df['rsi'].rolling(window=rsi_mid_period).mean()
     
