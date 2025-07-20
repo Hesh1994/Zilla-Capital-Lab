@@ -133,6 +133,32 @@ def calculate_sharpe_ratio(returns_series, risk_free_rate=0.02):
     
     return (mean_return * 252) / (std_dev * np.sqrt(252))
 
+def safe_column_access(df, column_candidates):
+    """Safely access DataFrame columns, handling both single-level and MultiIndex"""
+    if df is None or df.empty:
+        return None
+    
+    # Try each column candidate
+    for col_name in column_candidates:
+        try:
+            # Check if it's a string (single-level column)
+            if isinstance(col_name, str) and col_name in df.columns:
+                return df[col_name]
+            
+            # Check if it's a tuple (MultiIndex column)
+            elif isinstance(col_name, tuple) and col_name in df.columns:
+                return df[col_name]
+            
+            # For MultiIndex, also try searching for the first level
+            elif isinstance(col_name, str) and hasattr(df.columns, 'levels'):
+                for col in df.columns:
+                    if isinstance(col, tuple) and col[0] == col_name:
+                        return df[col]
+        except Exception:
+            continue
+    
+    return None
+
 def calculate_indicators(df, ticker, price_col, rsi_period, rsi_mid_period, sma_period, ema_period, ema_seed_period):
     """Calculate technical indicators"""
     prices = df[price_col, ticker].values
@@ -697,19 +723,34 @@ if 'results' in st.session_state:
         # Calculate benchmark metrics
         if sp500_df is not None and not sp500_df.empty:
             try:
-                # S&P 500 metrics
-                if 'Adj Close' in sp500_df.columns:
-                    sp500_returns = sp500_df['Adj Close'].pct_change().dropna()
-                else:
-                    # Handle MultiIndex columns
-                    sp500_returns = sp500_df[('Adj Close', '^GSPC')].pct_change().dropna()
+                # S&P 500 metrics - use safe column access
+                sp500_price_data = safe_column_access(sp500_df, ['Adj Close', 'Close', ('Adj Close', '^GSPC'), ('Close', '^GSPC')])
+                
+                if sp500_price_data is None:
+                    raise ValueError("Unable to find price column in S&P 500 data")
+                
+                sp500_returns = sp500_price_data.pct_change().dropna()
+                
+                # Validate sp500_returns before proceeding
+                if sp500_returns.empty or len(sp500_returns) == 0:
+                    raise ValueError("Unable to extract valid S&P 500 returns data")
                 
                 sp500_max_drawdown = calculate_max_drawdown(sp500_returns)
                 sp500_sharpe = calculate_sharpe_ratio(sp500_returns)
                 sp500_total_return = (1 + sp500_returns).prod() - 1
                 
-                # Stock metrics
-                stock_returns = df[price_column, ticker].pct_change().dropna()
+                # Stock metrics - use safe column access for consistency
+                stock_price_data = safe_column_access(df, [(price_column, ticker)])
+                
+                if stock_price_data is None:
+                    raise ValueError(f"Unable to find {price_column} column for {ticker}")
+                
+                stock_returns = stock_price_data.pct_change().dropna()
+                
+                # Validate stock returns
+                if stock_returns.empty or len(stock_returns) == 0:
+                    raise ValueError("Unable to extract valid stock returns data")
+                
                 stock_max_drawdown = calculate_max_drawdown(stock_returns)
                 stock_sharpe = calculate_sharpe_ratio(stock_returns)
                 stock_total_return = (1 + stock_returns).prod() - 1
@@ -739,10 +780,20 @@ if 'results' in st.session_state:
             except Exception as e:
                 st.error(f"Error calculating benchmark metrics: {e}")
                 st.info("Unable to load S&P 500 data for comparison")
-                # Debug information
+                # Enhanced debug information
                 if sp500_df is not None:
-                    st.write("S&P 500 DataFrame columns:", list(sp500_df.columns))
-                    st.write("S&P 500 DataFrame shape:", sp500_df.shape)
+                    st.write("**S&P 500 Debug Information:**")
+                    st.write(f"DataFrame shape: {sp500_df.shape}")
+                    st.write(f"Column structure: {type(sp500_df.columns)}")
+                    st.write(f"Columns: {list(sp500_df.columns)}")
+                    if hasattr(sp500_df.columns, 'levels'):
+                        st.write(f"MultiIndex levels: {sp500_df.columns.levels}")
+                    
+                    # Show first few rows for debugging
+                    st.write("First 3 rows:")
+                    st.write(sp500_df.head(3))
+                else:
+                    st.write("sp500_df is None")
         else:
             st.info("S&P 500 data not available for comparison")
         
