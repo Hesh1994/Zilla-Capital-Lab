@@ -100,18 +100,38 @@ def download_sp500_data(start_date, end_date):
 
 def calculate_max_drawdown(returns_series):
     """Calculate maximum drawdown from a returns series"""
+    if returns_series.empty or len(returns_series) == 0:
+        return 0
+    
     cumulative = (1 + returns_series).cumprod()
     rolling_max = cumulative.expanding().max()
     drawdown = (cumulative - rolling_max) / rolling_max
+    
+    # Handle cases where drawdown might be empty or all NaN
+    if drawdown.empty or drawdown.isna().all():
+        return 0
+    
     return drawdown.min()
 
 def calculate_sharpe_ratio(returns_series, risk_free_rate=0.02):
     """Calculate Sharpe ratio (assuming 2% risk-free rate)"""
-    excess_returns = returns_series - risk_free_rate/252  # Daily risk-free rate
-    std_dev = excess_returns.std()
-    if std_dev == 0 or pd.isna(std_dev) or std_dev < 1e-10:
+    if returns_series.empty or len(returns_series) == 0:
         return 0
-    return (excess_returns.mean() * 252) / (std_dev * np.sqrt(252))
+    
+    excess_returns = returns_series - risk_free_rate/252  # Daily risk-free rate
+    
+    # Handle cases where excess_returns might be all NaN
+    if excess_returns.isna().all():
+        return 0
+    
+    std_dev = excess_returns.std()
+    mean_return = excess_returns.mean()
+    
+    # Check for invalid values
+    if pd.isna(std_dev) or pd.isna(mean_return) or std_dev == 0 or std_dev < 1e-10:
+        return 0
+    
+    return (mean_return * 252) / (std_dev * np.sqrt(252))
 
 def calculate_indicators(df, ticker, price_col, rsi_period, rsi_mid_period, sma_period, ema_period, ema_seed_period):
     """Calculate technical indicators"""
@@ -677,13 +697,19 @@ if 'results' in st.session_state:
         # Calculate benchmark metrics
         if sp500_df is not None and not sp500_df.empty:
             try:
-                sp500_returns = sp500_df['Adj Close'].pct_change().fillna(0)
+                # S&P 500 metrics
+                if 'Adj Close' in sp500_df.columns:
+                    sp500_returns = sp500_df['Adj Close'].pct_change().dropna()
+                else:
+                    # Handle MultiIndex columns
+                    sp500_returns = sp500_df[('Adj Close', '^GSPC')].pct_change().dropna()
+                
                 sp500_max_drawdown = calculate_max_drawdown(sp500_returns)
                 sp500_sharpe = calculate_sharpe_ratio(sp500_returns)
                 sp500_total_return = (1 + sp500_returns).prod() - 1
                 
                 # Stock metrics
-                stock_returns = df[price_column, ticker].pct_change().fillna(0)
+                stock_returns = df[price_column, ticker].pct_change().dropna()
                 stock_max_drawdown = calculate_max_drawdown(stock_returns)
                 stock_sharpe = calculate_sharpe_ratio(stock_returns)
                 stock_total_return = (1 + stock_returns).prod() - 1
@@ -713,6 +739,10 @@ if 'results' in st.session_state:
             except Exception as e:
                 st.error(f"Error calculating benchmark metrics: {e}")
                 st.info("Unable to load S&P 500 data for comparison")
+                # Debug information
+                if sp500_df is not None:
+                    st.write("S&P 500 DataFrame columns:", list(sp500_df.columns))
+                    st.write("S&P 500 DataFrame shape:", sp500_df.shape)
         else:
             st.info("S&P 500 data not available for comparison")
         
