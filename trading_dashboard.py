@@ -26,8 +26,7 @@ try:
     USE_TA = True
     st.sidebar.success("✅ Using ta library for technical analysis")
 except ImportError:
-    st.sidebar.warning("⚠️ Using manual RSI calculation")
-    st.info("Technical analysis library not available. Using manual calculations.")
+    st.sidebar.info("ℹ️ Using manual RSI calculation (ta library not available)")
 
 st.title("📈 Trading Strategy Backtesting Dashboard")
 st.markdown("---")
