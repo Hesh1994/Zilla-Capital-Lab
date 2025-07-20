@@ -1,6 +1,5 @@
-# Trading Dashboard Dependencies - Minimal Version (July 20, 2025)
-streamlit>=1.28.0
-plotly>=5.17.0
-yfinance>=0.2.18
-pandas>=1.5.0,<2.0.0
-numpy>=1.21.0,<2.0.0
+streamlit
+plotly
+yfinance
+pandas
+numpy
