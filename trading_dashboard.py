@@ -2,7 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import pandas_ta
+try:
+    import pandas_ta
+    USE_PANDAS_TA = True
+except ImportError:
+    import ta
+    USE_PANDAS_TA = False
+    st.warning("pandas_ta not available, using ta library instead")
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -107,7 +113,13 @@ def calculate_indicators(df, ticker, price_col, rsi_period, rsi_mid_period, sma_
     
     df['ema_manual'] = ema_values
     df['sma'] = df[price_col, ticker].rolling(window=sma_period).mean()
-    df['rsi'] = pandas_ta.rsi(df[price_col, ticker], length=rsi_period)
+    
+    # Calculate RSI using available library
+    if USE_PANDAS_TA:
+        df['rsi'] = pandas_ta.rsi(df[price_col, ticker], length=rsi_period)
+    else:
+        df['rsi'] = ta.momentum.rsi(df[price_col, ticker], window=rsi_period)
+    
     df['rsi_mid'] = df['rsi'].rolling(window=rsi_mid_period).mean()
     
     # Signals
