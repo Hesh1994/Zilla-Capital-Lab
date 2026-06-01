@@ -9,7 +9,26 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import warnings
+import requests
+from io import StringIO
 warnings.filterwarnings('ignore')
+
+# Helper function for safe Wikipedia scraping
+def safe_read_html_from_url(url, table_index=0):
+    """
+    Safely fetch and parse HTML table from Wikipedia with proper User-Agent header
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        tables = pd.read_html(StringIO(response.text))
+        return tables[table_index] if len(tables) > table_index else None
+    except Exception as e:
+        st.error(f"Failed to fetch data from {url}: {str(e)}")
+        return None
 
 # Set page config first
 st.set_page_config(
