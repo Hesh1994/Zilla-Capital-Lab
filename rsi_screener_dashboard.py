@@ -263,7 +263,7 @@ with tab_over:
     if oversold_dict:
         df_over = build_rows(oversold_dict, "oversold")
         rsi_present = [c for c in rsi_cols if c in df_over.columns]
-        styled = df_over.style.applymap(
+        styled = df_over.style.map(
             lambda v: rsi_color(v, "oversold"), subset=rsi_present
         ).format({c: "{:.2f}" for c in rsi_present}, na_rep="—")
         st.dataframe(styled, use_container_width=True, hide_index=True)
@@ -275,7 +275,7 @@ with tab_overbought:
     if overbought_dict:
         df_ob = build_rows(overbought_dict, "overbought")
         rsi_present = [c for c in rsi_cols if c in df_ob.columns]
-        styled = df_ob.style.applymap(
+        styled = df_ob.style.map(
             lambda v: rsi_color(v, "overbought"), subset=rsi_present
         ).format({c: "{:.2f}" for c in rsi_present}, na_rep="—")
         st.dataframe(styled, use_container_width=True, hide_index=True)
