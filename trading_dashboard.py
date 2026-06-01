@@ -30,6 +30,19 @@ def safe_read_html_from_url(url, table_index=0):
         st.error(f"Failed to fetch data from {url}: {str(e)}")
         return None
 
+@st.cache_data
+def get_sp500_symbols():
+    """Fetch S&P 500 symbols from Wikipedia with proper headers"""
+    try:
+        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+        df = safe_read_html_from_url(url, table_index=0)
+        if df is not None and 'Symbol' in df.columns:
+            return df['Symbol'].tolist()
+        return []
+    except Exception as e:
+        st.warning(f"Could not fetch S&P 500 symbols: {e}")
+        return []
+
 # Set page config first
 st.set_page_config(
     page_title="Trading Strategy Dashboard",
